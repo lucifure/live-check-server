@@ -5,6 +5,18 @@ import re
 
 app = Flask(__name__)
 
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Cache-Control': 'max-age=0',
+}
+
 def get_live_url(url):
     url = url.strip().rstrip('/')
     if re.search(r'youtube\.com/(@|channel/|c/|user/)', url) and not url.endswith('/live'):
@@ -13,7 +25,7 @@ def get_live_url(url):
 
 @app.route('/')
 def home():
-    return jsonify({'status': 'Live Check Server Running', 'version': '2.0'})
+    return jsonify({'status': 'Live Check Server Running', 'version': '3.0'})
 
 @app.route('/check')
 def check():
@@ -23,41 +35,30 @@ def check():
 
     live_url = get_live_url(url)
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Cache-Control': 'no-cache',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-    }
-
     try:
         session = requests.Session()
-        # First visit YouTube homepage to get cookies
-        session.get('https://www.youtube.com', headers=headers, timeout=10)
-
-        # Now check the live URL
-        res = session.get(live_url, headers=headers, timeout=20)
+        session.get('https://www.youtube.com', headers=HEADERS, timeout=10)
+        res = session.get(live_url, headers=HEADERS, timeout=20)
         html = res.text
 
-        is_live = (
-            '"isLiveBroadcast"' in html or
-            '"isLive":true' in html or
-            '"live_playback":1' in html or
-            'hlsManifestUrl' in html or
-            '"isLiveContent":true' in html or
-            ('watching now' in html) or
-            ('"continuations"' in html and 'chat' in html)
-        )
+        checks = {
+            'isLiveBroadcast': '"isLiveBroadcast"' in html,
+            'isLiveTrue': '"isLive":true' in html,
+            'live_playback': '"live_playback":1' in html,
+            'hlsManifestUrl': 'hlsManifestUrl' in html,
+            'isLiveContent': '"isLiveContent":true' in html,
+            'watching_now': 'watching now' in html,
+            'continuations_chat': '"continuations"' in html and 'chat' in html,
+        }
+
+        is_live = any(checks.values())
 
         return jsonify({
             'live': is_live,
             'url': live_url,
-            'status': res.status_code
+            'checks': checks,
+            'html_length': len(html),
+            'html_sample': html[1000:2000]
         })
 
     except Exception as e:
